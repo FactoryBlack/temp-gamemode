@@ -1,0 +1,361 @@
+/**
+ * EliminationChamber - Server-Authoritative Elimination Gamemode
+ * Players have limited lives. Finish to become Safe and spectate.
+ * Only Unsafe players can vote to skip. Last player(s) standing wins.
+ */
+
+#Extends "Modes/Trackmania/TM_Base.Script.txt"
+
+#Const CompatibleMapTypes "TrackMania\\TM_Race,TM_Race"
+#Const Version "1.0.0"
+#Const ScriptName "EliminationChamber"
+
+// Settings
+#Setting S_LivesStart 3 as "Starting Lives"
+#Setting S_SkipThresholdPercent 51 as "Skip Vote Threshold (%)"
+#Setting S_RoundTimeoutSec 300 as "Round Timeout (seconds, 0 = disabled)"
+#Setting S_WinnersCount 1 as "Winners Count (stop when N players remain)"
+
+// Script values for EvoSC communication
+declare Text[] G_PlayerStates for This;
+declare Integer[] G_PlayerLives for This;
+declare Text[] G_SafePlayers for This;
+declare Integer G_UnsafeCount for This;
+declare Integer G_SkipVotes for This;
+declare Integer G_SkipThreshold for This;
+declare Boolean G_RoundActive for This;
+declare Integer G_RoundTimeLeft for This;
+
+// Internal state
+declare Integer[Text] PlayerLives;
+declare Boolean[Text] PlayerSafe;
+declare Boolean[Text] PlayerCarryOverSafe;
+declare Text[] SkipVoters;
+declare Integer RoundStartTime;
+declare Boolean RoundEnded;
+
+***Match_LoadHud***
+***
+// Load HUD
+Hud_Load("file://Media/ManiaApps/Nadeo/Trackmania/Modes/EliminationChamber.xml");
+***
+
+***Match_StartServer***
+***
+// Initialize global variables
+G_PlayerStates = Text[];
+G_PlayerLives = Integer[];
+G_SafePlayers = Text[];
+G_UnsafeCount = 0;
+G_SkipVotes = 0;
+G_SkipThreshold = 0;
+G_RoundActive = False;
+G_RoundTimeLeft = 0;
+
+PlayerLives = Integer[Text];
+PlayerSafe = Boolean[Text];
+PlayerCarryOverSafe = Boolean[Text];
+SkipVoters = Text[];
+RoundStartTime = -1;
+RoundEnded = False;
+
+log("EliminationChamber: Server started");
+***
+
+***Match_StartMap***
+***
+// Reset round state
+RoundEnded = False;
+RoundStartTime = Now;
+G_RoundActive = True;
+G_SkipVotes = 0;
+SkipVoters = Text[];
+
+// Initialize new players with starting lives
+foreach (Player in Players) {
+    if (!PlayerLives.existskey(Player.User.Login)) {
+        PlayerLives[Player.User.Login] = S_LivesStart;
+        PlayerSafe[Player.User.Login] = False;
+        PlayerCarryOverSafe[Player.User.Login] = False;
+    }
+}
+
+// Apply carry-over Safe status (unless player voted skip last round)
+foreach (Player in Players) {
+    if (PlayerCarryOverSafe.existskey(Player.User.Login) && PlayerCarryOverSafe[Player.User.Login]) {
+        PlayerSafe[Player.User.Login] = True;
+        // Force spectator immediately
+        SetPlayerClan(Player, 0);
+        Player.IsSpawned = False;
+    } else {
+        PlayerSafe[Player.User.Login] = False;
+        // Allow racing
+        SetPlayerClan(Player, 1);
+    }
+}
+
+// Update global state
+UpdateGlobalState();
+
+log("EliminationChamber: Map started - " ^ Map.MapName);
+***
+
+***Match_PlayLoop***
+***
+// Handle events
+foreach (Event in PendingEvents) {
+    switch (Event.Type) {
+        case CSmModeEvent::EType::OnPlayerAdded: {
+            declare Player <=> Event.Player;
+            if (!PlayerLives.existskey(Player.User.Login)) {
+                PlayerLives[Player.User.Login] = S_LivesStart;
+                PlayerSafe[Player.User.Login] = False;
+                PlayerCarryOverSafe[Player.User.Login] = False;
+            }
+            UpdateGlobalState();
+        }
+        
+        case CSmModeEvent::EType::OnPlayerRemoved: {
+            declare Player <=> Event.Player;
+            // Remove from skip voters if they were voting
+            declare Integer SkipIndex = SkipVoters.keyof(Player.User.Login);
+            if (SkipIndex != -1) {
+                SkipVoters.removekey(SkipIndex);
+                G_SkipVotes = SkipVoters.count;
+            }
+            UpdateGlobalState();
+        }
+        
+        case CSmModeEvent::EType::OnCommand: {
+            declare Player <=> Event.Player;
+            declare CommandName = Event.CommandName;
+            declare CommandValueText = Event.CommandValueText;
+            
+            if (CommandName == "skip") {
+                HandleSkipVote(Player);
+            }
+        }
+        
+        case CSmModeEvent::EType::OnPlayerRequestRespawn: {
+            declare Player <=> Event.Player;
+            // Only allow respawn if player is not Safe
+            if (!PlayerSafe.existskey(Player.User.Login) || !PlayerSafe[Player.User.Login]) {
+                PassOn(Event);
+            }
+        }
+    }
+}
+
+// Check for finishes
+foreach (Player in Players) {
+    if (Player.Score.BestRace.Time > 0 && !PlayerSafe.existskey(Player.User.Login) || !PlayerSafe[Player.User.Login]) {
+        // Player finished and wasn't already Safe
+        PlayerSafe[Player.User.Login] = True;
+        PlayerCarryOverSafe[Player.User.Login] = True;
+        
+        // Force spectator
+        SetPlayerClan(Player, 0);
+        Player.IsSpawned = False;
+        
+        // Send popup
+        SendNoticeToPlayer(Player, "You are Safe! You cannot drive until the next map.", 5000, CUIConfig::ENoticeLevel::Success, CUIConfig::EAvatarVariant::Default, CUIConfigSound::EUISound::Finish, 0);
+        
+        log("EliminationChamber: " ^ Player.User.Name ^ " finished and is now Safe");
+        UpdateGlobalState();
+    }
+}
+
+// Check if all players are Safe
+declare Integer UnsafeCount = 0;
+foreach (Player in Players) {
+    if (PlayerLives.existskey(Player.User.Login) && PlayerLives[Player.User.Login] > 0) {
+        if (!PlayerSafe.existskey(Player.User.Login) || !PlayerSafe[Player.User.Login]) {
+            UnsafeCount += 1;
+        }
+    }
+}
+
+if (UnsafeCount == 0 && Players.count > 0) {
+    // All players are Safe, end round early
+    EndRound();
+}
+
+// Check round timeout
+if (S_RoundTimeoutSec > 0 && RoundStartTime > 0) {
+    declare Integer TimeElapsed = (Now - RoundStartTime) / 1000;
+    G_RoundTimeLeft = S_RoundTimeoutSec - TimeElapsed;
+    
+    if (TimeElapsed >= S_RoundTimeoutSec && !RoundEnded) {
+        log("EliminationChamber: Round timeout reached");
+        EndRound();
+    }
+} else {
+    G_RoundTimeLeft = 0;
+}
+
+// Update global state periodically
+UpdateGlobalState();
+***
+
+***Match_EndMap***
+***
+G_RoundActive = False;
+
+if (!RoundEnded) {
+    // Process elimination for Unsafe players
+    declare Text[] EliminatedPlayers;
+    
+    foreach (Player in Players) {
+        if (PlayerLives.existskey(Player.User.Login) && PlayerLives[Player.User.Login] > 0) {
+            if (!PlayerSafe.existskey(Player.User.Login) || !PlayerSafe[Player.User.Login]) {
+                // Unsafe player loses a life
+                PlayerLives[Player.User.Login] -= 1;
+                
+                if (PlayerLives[Player.User.Login] <= 0) {
+                    // Eliminated
+                    EliminatedPlayers.add(Player.User.Login);
+                    SetPlayerClan(Player, 0);
+                    SendNoticeToPlayer(Player, "Eliminated! You are now a spectator.", 5000, CUIConfig::ENoticeLevel::Error, CUIConfig::EAvatarVariant::Default, CUIConfigSound::EUISound::Warning, 0);
+                    log("EliminationChamber: " ^ Player.User.Name ^ " eliminated");
+                } else {
+                    // Still alive but lost a life
+                    SendNoticeToPlayer(Player, "Life lost! Lives remaining: " ^ PlayerLives[Player.User.Login], 3000, CUIConfig::ENoticeLevel::Warning, CUIConfig::EAvatarVariant::Default, CUIConfigSound::EUISound::Warning, 0);
+                }
+            }
+        }
+    }
+    
+    // Clear carry-over Safe status for skip voters
+    foreach (Login in SkipVoters) {
+        PlayerCarryOverSafe[Login] = False;
+    }
+}
+
+// Check win condition
+declare Integer PlayersAlive = 0;
+foreach (Player in Players) {
+    if (PlayerLives.existskey(Player.User.Login) && PlayerLives[Player.User.Login] > 0) {
+        PlayersAlive += 1;
+    }
+}
+
+if (PlayersAlive <= S_WinnersCount) {
+    // End session
+    log("EliminationChamber: Session ended - " ^ PlayersAlive ^ " player(s) remaining");
+    // EvoSC will handle session end via script values
+}
+
+UpdateGlobalState();
+log("EliminationChamber: Map ended");
+***
+
+// Handle skip voting
+Void HandleSkipVote(CSmPlayer Player) {
+    // Only Unsafe players can vote
+    if (PlayerSafe.existskey(Player.User.Login) && PlayerSafe[Player.User.Login]) {
+        SendNoticeToPlayer(Player, "Safe players cannot vote to skip.", 3000, CUIConfig::ENoticeLevel::Warning, CUIConfig::EAvatarVariant::Default, CUIConfigSound::EUISound::Warning, 0);
+        return;
+    }
+    
+    // Check if already voted
+    if (SkipVoters.exists(Player.User.Login)) {
+        SendNoticeToPlayer(Player, "You have already voted to skip.", 3000, CUIConfig::ENoticeLevel::Info, CUIConfig::EAvatarVariant::Default, CUIConfigSound::EUISound::Default, 0);
+        return;
+    }
+    
+    // Add vote
+    SkipVoters.add(Player.User.Login);
+    G_SkipVotes = SkipVoters.count;
+    
+    // Calculate threshold
+    declare Integer UnsafeCount = 0;
+    foreach (CheckPlayer in Players) {
+        if (PlayerLives.existskey(CheckPlayer.User.Login) && PlayerLives[CheckPlayer.User.Login] > 0) {
+            if (!PlayerSafe.existskey(CheckPlayer.User.Login) || !PlayerSafe[CheckPlayer.User.Login]) {
+                UnsafeCount += 1;
+            }
+        }
+    }
+    
+    G_SkipThreshold = ML::Max(1, (UnsafeCount * S_SkipThresholdPercent) / 100);
+    
+    log("EliminationChamber: " ^ Player.User.Name ^ " voted to skip (" ^ G_SkipVotes ^ "/" ^ G_SkipThreshold ^ ")");
+    
+    // Check if threshold reached
+    if (G_SkipVotes >= G_SkipThreshold) {
+        log("EliminationChamber: Skip vote passed, ending round");
+        EndRound();
+    }
+    
+    UpdateGlobalState();
+}
+
+// End the current round
+Void EndRound() {
+    if (RoundEnded) return;
+    
+    RoundEnded = True;
+    G_RoundActive = False;
+    
+    // Force all players to spectator to end the round
+    foreach (Player in Players) {
+        SetPlayerClan(Player, 0);
+        Player.IsSpawned = False;
+    }
+    
+    // Trigger map end
+    MB_StopMap();
+}
+
+// Update global state for EvoSC communication
+Void UpdateGlobalState() {
+    G_PlayerStates = Text[];
+    G_PlayerLives = Integer[];
+    G_SafePlayers = Text[];
+    G_UnsafeCount = 0;
+    
+    foreach (Player in Players) {
+        declare Login = Player.User.Login;
+        
+        if (PlayerLives.existskey(Login)) {
+            G_PlayerLives.add(PlayerLives[Login]);
+            
+            if (PlayerLives[Login] > 0) {
+                if (PlayerSafe.existskey(Login) && PlayerSafe[Login]) {
+                    G_PlayerStates.add("SAFE");
+                    G_SafePlayers.add(Login);
+                } else {
+                    G_PlayerStates.add("UNSAFE");
+                    G_UnsafeCount += 1;
+                }
+            } else {
+                G_PlayerStates.add("ELIMINATED");
+            }
+        } else {
+            G_PlayerStates.add("UNKNOWN");
+            G_PlayerLives.add(0);
+        }
+    }
+    
+    // Update skip threshold
+    if (G_UnsafeCount > 0) {
+        G_SkipThreshold = ML::Max(1, (G_UnsafeCount * S_SkipThresholdPercent) / 100);
+    } else {
+        G_SkipThreshold = 0;
+    }
+}
+
+// Set player clan (1 = racing, 0 = spectator)
+Void SetPlayerClan(CSmPlayer Player, Integer Clan) {
+    if (Player.RequestedClan != Clan) {
+        Player.RequestedClan = Clan;
+    }
+}
+
+// Send notice to specific player
+Void SendNoticeToPlayer(CSmPlayer Player, Text Message, Integer Duration, CUIConfig::ENoticeLevel Level, CUIConfig::EAvatarVariant Avatar, CUIConfigSound::EUISound Sound, Integer SoundVariant) {
+    declare UI <=> UIManager.GetUI(Player);
+    if (UI != Null) {
+        UI.SendNotice(Message, Level, Avatar, Sound, SoundVariant);
+    }
+}

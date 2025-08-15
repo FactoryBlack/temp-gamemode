@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manialink id="EliminationChamber.AdminPanel" version="3">
+    <stylesheet>
+        <style class="text-title" textfont="GameFontSemiBold" textsize="3" textcolor="ffffff" />
+        <style class="text-normal" textfont="GameFontRegular" textsize="2" textcolor="cccccc" />
+        <style class="text-button" textfont="GameFontSemiBold" textsize="2" textcolor="ffffff" />
+        <style class="bg-panel" bgcolor="000000cc" />
+        <style class="bg-button" bgcolor="0066aacc" />
+        <style class="bg-button-hover" bgcolor="0088cccc" />
+        <style class="bg-danger" bgcolor="aa0000cc" />
+    </stylesheet>
+
+    <!-- Admin Panel Container (center-left) -->
+    <frame id="admin-panel" pos="-140 40" z-index="60">
+        
+        <!-- Panel background -->
+        <quad class="bg-panel" size="60 80" style="Bgs1InRace" substyle="BgCard" />
+        
+        <!-- Title -->
+        <label class="text-title" pos="30 -5" halign="center" valign="center" text="Elimination Chamber" />
+        <label class="text-normal" pos="30 -10" halign="center" valign="center" text="Admin Panel" />
+        
+        <!-- Session Status -->
+        <frame id="status-section" pos="5 -18">
+            <label class="text-normal" pos="0 0" text="Status:" />
+            <label class="text-normal" pos="0 -4" text="Active: No" id="status-active" />
+            <label class="text-normal" pos="0 -8" text="Players: 0" id="status-players" />
+            <label class="text-normal" pos="0 -12" text="Queue: 0 maps" id="status-queue" />
+        </frame>
+        
+        <!-- Control Buttons -->
+        <frame id="controls-section" pos="5 -35">
+            
+            <!-- Start Session -->
+            <frame id="btn-start" pos="0 0">
+                <quad class="bg-button" size="25 6" style="Bgs1InRace" substyle="BgCard" scriptevents="1" id="start-bg" />
+                <label class="text-button" pos="12.5 -3" halign="center" valign="center" text="Start Session" />
+            </frame>
+            
+            <!-- Stop Session -->
+            <frame id="btn-stop" pos="27 0">
+                <quad class="bg-danger" size="25 6" style="Bgs1InRace" substyle="BgCard" scriptevents="1" id="stop-bg" />
+                <label class="text-button" pos="12.5 -3" halign="center" valign="center" text="Stop Session" />
+            </frame>
+            
+            <!-- Force Next Map -->
+            <frame id="btn-next" pos="0 -8">
+                <quad class="bg-button" size="25 6" style="Bgs1InRace" substyle="BgCard" scriptevents="1" id="next-bg" />
+                <label class="text-button" pos="12.5 -3" halign="center" valign="center" text="Next Map" />
+            </frame>
+            
+            <!-- Refresh Status -->
+            <frame id="btn-refresh" pos="27 -8">
+                <quad class="bg-button" size="25 6" style="Bgs1InRace" substyle="BgCard" scriptevents="1" id="refresh-bg" />
+                <label class="text-button" pos="12.5 -3" halign="center" valign="center" text="Refresh" />
+            </frame>
+            
+        </frame>
+        
+        <!-- Settings -->
+        <frame id="settings-section" pos="5 -55">
+            <label class="text-normal" pos="0 0" text="Settings:" />
+            
+            <!-- Lives Setting -->
+            <frame id="lives-setting" pos="0 -5">
+                <label class="text-normal" pos="0 0" text="Lives:" />
+                <quad class="bg-button" size="6 4" pos="20 0" style="Bgs1InRace" substyle="BgCard" scriptevents="1" id="lives-minus" />
+                <label class="text-button" pos="23 -2" halign="center" valign="center" text="-" />
+                <label class="text-normal" pos="30 -2" halign="center" valign="center" text="3" id="lives-value" />
+                <quad class="bg-button" size="6 4" pos="36 0" style="Bgs1InRace" substyle="BgCard" scriptevents="1" id="lives-plus" />
+                <label class="text-button" pos="39 -2" halign="center" valign="center" text="+" />
+            </frame>
+            
+        </frame>
+        
+        <!-- Close Button -->
+        <frame id="btn-close" pos="52 -2">
+            <quad class="bg-danger" size="6 6" style="Bgs1InRace" substyle="BgCard" scriptevents="1" id="close-bg" />
+            <label class="text-button" pos="3 -3" halign="center" valign="center" text="×" textsize="3" />
+        </frame>
+        
+    </frame>
+
+    <script><!--
+        #Include "TextLib" as TL
+        
+        // Panel state
+        declare Integer CurrentLives = 3;
+        declare Boolean SessionActive = False;
+        
+        // UI elements
+        declare CMlLabel StatusActive <=> (Page.GetFirstChild("status-active") as CMlLabel);
+        declare CMlLabel StatusPlayers <=> (Page.GetFirstChild("status-players") as CMlLabel);
+        declare CMlLabel StatusQueue <=> (Page.GetFirstChild("status-queue") as CMlLabel);
+        declare CMlLabel LivesValue <=> (Page.GetFirstChild("lives-value") as CMlLabel);
+        
+        // Update panel display
+        Void UpdatePanel() {
+            StatusActive.SetText("Active: " ^ (SessionActive ? "Yes" : "No"));
+            LivesValue.SetText("" ^ CurrentLives);
+        }
+        
+        // Handle button clicks
+        Void HandleButtonClick(Text ButtonId) {
+            switch (ButtonId) {
+                case "start-bg": {
+                    SendCustomEvent("AdminAction", ["start", "" ^ CurrentLives]);
+                }
+                case "stop-bg": {
+                    SendCustomEvent("AdminAction", ["stop"]);
+                }
+                case "next-bg": {
+                    SendCustomEvent("AdminAction", ["next"]);
+                }
+                case "refresh-bg": {
+                    SendCustomEvent("AdminAction", ["refresh"]);
+                }
+                case "lives-minus": {
+                    if (CurrentLives > 1) {
+                        CurrentLives -= 1;
+                        UpdatePanel();
+                    }
+                }
+                case "lives-plus": {
+                    if (CurrentLives < 10) {
+                        CurrentLives += 1;
+                        UpdatePanel();
+                    }
+                }
+                case "close-bg": {
+                    SendCustomEvent("AdminAction", ["close"]);
+                }
+            }
+        }
+        
+        // Handle custom events from EvoSC
+        Void HandleCustomEvent(Text Type, Text[] Data) {
+            switch (Type) {
+                case "UpdateStatus": {
+                    if (Data.count >= 3) {
+                        SessionActive = TL::ToBoolean(Data[0]);
+                        StatusPlayers.SetText("Players: " ^ Data[1]);
+                        StatusQueue.SetText("Queue: " ^ Data[2] ^ " maps");
+                        UpdatePanel();
+                    }
+                }
+            }
+        }
+        
+        // Main loop
+        main() {
+            UpdatePanel();
+            
+            while (True) {
+                yield;
+                
+                // Handle events
+                foreach (Event in PendingEvents) {
+                    switch (Event.Type) {
+                        case CMlScriptEvent::Type::MouseClick: {
+                            HandleButtonClick(Event.Control.ControlId);
+                        }
+                        case CMlScriptEvent::Type::PluginCustomEvent: {
+                            HandleCustomEvent(Event.CustomEventType, Event.CustomEventData);
+                        }
+                    }
+                }
+            }
+        }
+    --></script>
+</manialink>

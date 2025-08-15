@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manialink id="EliminationChamber.PopupSafe" version="3">
+    <stylesheet>
+        <style class="text-title" textfont="GameFontBlack" textsize="4" textcolor="ffffff" />
+        <style class="text-message" textfont="GameFontSemiBold" textsize="2.5" textcolor="cccccc" />
+        <style class="bg-popup" bgcolor="00aa00dd" />
+        <style class="bg-overlay" bgcolor="000000aa" />
+    </stylesheet>
+
+    <!-- Background overlay -->
+    <quad class="bg-overlay" size="320 180" pos="0 0" halign="center" valign="center" z-index="100" />
+
+    <!-- Popup container -->
+    <frame id="popup-container" pos="0 0" z-index="101">
+        
+        <!-- Main popup background -->
+        <quad class="bg-popup" size="80 30" pos="0 0" halign="center" valign="center" style="Bgs1InRace" substyle="BgCard" />
+        
+        <!-- Success icon -->
+        <quad size="8 8" pos="-30 8" halign="center" valign="center" style="Icons128x128_1" substyle="Check" />
+        
+        <!-- Title -->
+        <label class="text-title" pos="0 8" halign="center" valign="center" text="YOU ARE SAFE!" />
+        
+        <!-- Message -->
+        <label class="text-message" pos="0 -2" halign="center" valign="center" text="You cannot drive until the next map." />
+        
+        <!-- Subtitle -->
+        <label class="text-message" pos="0 -8" halign="center" valign="center" text="Watch other players compete!" textsize="2" />
+
+    </frame>
+
+    <script><!--
+        #Include "AnimLib" as AL
+        
+        // Animation variables
+        declare Integer ShowTime = 0;
+        declare Integer Duration = 5000; // 5 seconds
+        
+        // UI elements
+        declare CMlFrame PopupContainer <=> (Page.GetFirstChild("popup-container") as CMlFrame);
+        
+        // Animate popup entrance
+        Void AnimateIn() {
+            PopupContainer.RelativeScale = 0.5;
+            AL::SetTargetScale(PopupContainer, 1.0, 300, AL::EAnimManagerEasing::QuadOut);
+        }
+        
+        // Animate popup exit
+        Void AnimateOut() {
+            AL::SetTargetScale(PopupContainer, 0.8, 200, AL::EAnimManagerEasing::QuadIn);
+            AL::SetTargetOpacity(PopupContainer, 0.0, 200, AL::EAnimManagerEasing::QuadIn);
+        }
+        
+        // Main loop
+        main() {
+            ShowTime = Now;
+            AnimateIn();
+            
+            while (True) {
+                yield;
+                
+                // Auto-hide after duration
+                if (Now - ShowTime > Duration) {
+                    AnimateOut();
+                    sleep(300); // Wait for animation
+                    Page.GetClassChildren("bg-overlay", Page.MainFrame, True)[0].Hide();
+                    PopupContainer.Hide();
+                    break;
+                }
+                
+                // Handle events
+                foreach (Event in PendingEvents) {
+                    switch (Event.Type) {
+                        case CMlScriptEvent::Type::MouseClick: {
+                            // Click to dismiss
+                            AnimateOut();
+                            sleep(300);
+                            Page.GetClassChildren("bg-overlay", Page.MainFrame, True)[0].Hide();
+                            PopupContainer.Hide();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    --></script>
+</manialink>

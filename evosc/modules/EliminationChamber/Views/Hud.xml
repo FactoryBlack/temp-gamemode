@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manialink id="EliminationChamber.Hud" version="3">
+    <stylesheet>
+        <style class="text-main" textfont="GameFontSemiBold" textsize="2" textcolor="ffffff" />
+        <style class="text-small" textfont="GameFontRegular" textsize="1.5" textcolor="cccccc" />
+        <style class="text-lives" textfont="GameFontBlack" textsize="2.5" textcolor="ffffff" />
+        <style class="bg-main" bgcolor="000000aa" />
+        <style class="bg-safe" bgcolor="00aa00cc" />
+        <style class="bg-unsafe" bgcolor="ff6600cc" />
+        <style class="bg-eliminated" bgcolor="aa0000cc" />
+        <style class="bg-skip" bgcolor="0066aacc" />
+    </stylesheet>
+
+    <!-- Main HUD Container (top-right by default) -->
+    <frame id="hud-container" pos="140 85" z-index="50">
+        
+        <!-- Lives Pill -->
+        <frame id="lives-pill" pos="0 0">
+            <quad class="bg-main" size="25 8" style="Bgs1InRace" substyle="BgCard" />
+            <label class="text-lives" pos="12.5 -4" halign="center" valign="center" text="Lives: 3" id="lives-text" />
+        </frame>
+
+        <!-- Status Badge -->
+        <frame id="status-badge" pos="0 -10">
+            <quad class="bg-unsafe" size="25 6" style="Bgs1InRace" substyle="BgCard" id="status-bg" />
+            <label class="text-main" pos="12.5 -3" halign="center" valign="center" text="UNSAFE" id="status-text" />
+        </frame>
+
+        <!-- Skip Vote Meter -->
+        <frame id="skip-meter" pos="0 -18">
+            <quad class="bg-main" size="25 6" style="Bgs1InRace" substyle="BgCard" />
+            <quad class="bg-skip" size="0 6" style="Bgs1InRace" substyle="BgCard" id="skip-progress" />
+            <label class="text-small" pos="12.5 -3" halign="center" valign="center" text="Skip: 0/0" id="skip-text" />
+        </frame>
+
+        <!-- Round Timer (optional) -->
+        <frame id="round-timer" pos="0 -26">
+            <quad class="bg-main" size="25 6" style="Bgs1InRace" substyle="BgCard" id="timer-bg" />
+            <label class="text-small" pos="12.5 -3" halign="center" valign="center" text="5:00" id="timer-text" />
+        </frame>
+
+    </frame>
+
+    <script><!--
+        #Include "TextLib" as TL
+        #Include "MathLib" as ML
+        
+        // HUD state variables
+        declare Integer CurrentLives = 3;
+        declare Text CurrentStatus = "UNSAFE";
+        declare Integer SkipVotes = 0;
+        declare Integer SkipThreshold = 0;
+        declare Integer TimeLeft = 0;
+        declare Boolean TimerEnabled = False;
+        
+        // UI elements
+        declare CMlLabel LivesText <=> (Page.GetFirstChild("lives-text") as CMlLabel);
+        declare CMlLabel StatusText <=> (Page.GetFirstChild("status-text") as CMlLabel);
+        declare CMlQuad StatusBg <=> (Page.GetFirstChild("status-bg") as CMlQuad);
+        declare CMlLabel SkipText <=> (Page.GetFirstChild("skip-text") as CMlLabel);
+        declare CMlQuad SkipProgress <=> (Page.GetFirstChild("skip-progress") as CMlQuad);
+        declare CMlLabel TimerText <=> (Page.GetFirstChild("timer-text") as CMlLabel);
+        declare CMlQuad TimerBg <=> (Page.GetFirstChild("timer-bg") as CMlQuad);
+        declare CMlFrame TimerFrame <=> (Page.GetFirstChild("round-timer") as CMlFrame);
+        
+        // Initialize HUD
+        Void UpdateHUD() {
+            // Update lives
+            LivesText.SetText("Lives: " ^ CurrentLives);
+            
+            // Update status
+            StatusText.SetText(CurrentStatus);
+            switch (CurrentStatus) {
+                case "SAFE": {
+                    StatusBg.BgColor = <0., 0.67, 0., 0.8>;
+                }
+                case "UNSAFE": {
+                    StatusBg.BgColor = <1., 0.4, 0., 0.8>;
+                }
+                case "ELIMINATED": {
+                    StatusBg.BgColor = <0.67, 0., 0., 0.8>;
+                }
+                default: {
+                    StatusBg.BgColor = <0., 0., 0., 0.67>;
+                }
+            }
+            
+            // Update skip meter
+            if (SkipThreshold > 0) {
+                declare Real SkipPercent = ML::ToReal(SkipVotes) / ML::ToReal(SkipThreshold);
+                SkipProgress.Size.X = 25. * ML::Min(1., SkipPercent);
+                SkipText.SetText("Skip: " ^ SkipVotes ^ "/" ^ SkipThreshold);
+            } else {
+                SkipProgress.Size.X = 0.;
+                SkipText.SetText("Skip: 0/0");
+            }
+            
+            // Update timer
+            if (TimerEnabled && TimeLeft > 0) {
+                declare Integer Minutes = TimeLeft / 60;
+                declare Integer Seconds = TimeLeft % 60;
+                TimerText.SetText(Minutes ^ ":" ^ TL::FormatInteger(Seconds, 2));
+                TimerFrame.Visible = True;
+            } else {
+                TimerFrame.Visible = False;
+            }
+        }
+        
+        // Handle custom events from EvoSC
+        Void HandleCustomEvent(Text Type, Text[] Data) {
+            switch (Type) {
+                case "UpdateLives": {
+                    if (Data.count > 0) {
+                        CurrentLives = TL::ToInteger(Data[0]);
+                    }
+                }
+                case "UpdateStatus": {
+                    if (Data.count > 0) {
+                        CurrentStatus = Data[0];
+                    }
+                }
+                case "UpdateSkipVotes": {
+                    if (Data.count >= 2) {
+                        SkipVotes = TL::ToInteger(Data[0]);
+                        SkipThreshold = TL::ToInteger(Data[1]);
+                    }
+                }
+                case "UpdateTimer": {
+                    if (Data.count >= 2) {
+                        TimeLeft = TL::ToInteger(Data[0]);
+                        TimerEnabled = TL::ToBoolean(Data[1]);
+                    }
+                }
+                case "UpdateAll": {
+                    if (Data.count >= 6) {
+                        CurrentLives = TL::ToInteger(Data[0]);
+                        CurrentStatus = Data[1];
+                        SkipVotes = TL::ToInteger(Data[2]);
+                        SkipThreshold = TL::ToInteger(Data[3]);
+                        TimeLeft = TL::ToInteger(Data[4]);
+                        TimerEnabled = TL::ToBoolean(Data[5]);
+                    }
+                }
+            }
+            UpdateHUD();
+        }
+        
+        // Main loop
+        main() {
+            UpdateHUD();
+            
+            while (True) {
+                yield;
+                
+                // Handle page events
+                foreach (Event in PendingEvents) {
+                    switch (Event.Type) {
+                        case CMlScriptEvent::Type::PluginCustomEvent: {
+                            HandleCustomEvent(Event.CustomEventType, Event.CustomEventData);
+                        }
+                    }
+                }
+            }
+        }
+    --></script>
+</manialink>

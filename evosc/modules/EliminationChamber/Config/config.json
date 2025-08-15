@@ -1,0 +1,35 @@
+{
+  "livesStart": 3,
+  "skipThresholdPercent": 51,
+  "roundTimeoutSec": 300,
+  "winnersCount": 1,
+  "tmxApiKey": "",
+  "tmxFilters": {
+    "style": "Race",
+    "minLength": 30,
+    "maxLength": 90,
+    "difficulty": "",
+    "uploadedAfter": "2020-01-01"
+  },
+  "mapsPath": "UserData/Maps/EliminationChamber/",
+  "matchsettingsPath": "UserData/Maps/MatchSettings/elimination_chamber.txt",
+  "hudPosition": {
+    "x": 140,
+    "y": 85
+  },
+  "hudEnabled": true,
+  "popupsEnabled": true,
+  "adminPanelEnabled": true,
+  "logging": {
+    "enabled": true,
+    "level": "info"
+  },
+  "advanced": {
+    "mapQueueSize": 20,
+    "mapQueueRefillThreshold": 5,
+    "sessionTimeoutMinutes": 60,
+    "maxPlayersPerSession": 32,
+    "allowSpectatorChat": true,
+    "carryOverSafeStatus": true
+  }
+}
